@@ -364,7 +364,7 @@ int main(int argc, char *argv[]) {
 
   ba::io_service ios;
   ros::NodeHandle nh, pnh("~");
-  Context ctx("/dev/ttyUSB0", ios, nh, pnh);
+  Context ctx(pnh.param< std::string >("device", "/dev/ttyUSB0"), ios, nh, pnh);
 
   Machine m(&ctx);
 
