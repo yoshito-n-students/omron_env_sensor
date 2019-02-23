@@ -45,14 +45,14 @@ struct Context {
 };
 
 //
-// events
+// events to be processed by the state machine
 //
 
 struct Success {};
 struct Error {};
 
 //
-// the machine
+// the state machine
 //
 
 struct MachineDef : bmf::state_machine_def< MachineDef > {
@@ -64,6 +64,10 @@ struct MachineDef : bmf::state_machine_def< MachineDef > {
   struct WorkModeDef : bmf::state_machine_def< WorkModeDef > {
 
     // sub-states
+
+    struct Ok : bmf::state<> {};
+
+    struct Exit : bmf::exit_pseudo_state< Error > {};
 
     struct Opening : bmf::state<> {
       template < class Event, class FSM > void on_entry(const Event &, FSM &fsm) const {
@@ -81,10 +85,15 @@ struct MachineDef : bmf::state_machine_def< MachineDef > {
           fsm.ctx->serial.set_option(Serial::parity(Serial::parity::none));
           fsm.ctx->serial.set_option(Serial::flow_control(Serial::flow_control::none));
 
-          fsm.parent->process_event(Success());
+          // schedule an event processing after this entry action.
+          // this is because the event processing has to be executed
+          // after completing the transition to the Opening state
+          fsm.ctx->serial.get_io_service().post(boost::bind(
+              &bmb::state_machine< MachineDef >::process_event< Success >, fsm.parent, Success()));
         } catch (const bs::system_error &error) {
           ROS_ERROR_STREAM(error.what());
-          fsm.parent->process_event(Error());
+          fsm.ctx->serial.get_io_service().post(boost::bind(
+              &bmb::state_machine< MachineDef >::process_event< Error >, fsm.parent, Error()));
         }
       }
     };
@@ -120,9 +129,14 @@ struct MachineDef : bmf::state_machine_def< MachineDef > {
       }
 
       template < class FSM > void handle_wait(const bs::error_code &error, FSM &fsm) const {
-        if (error == ba::error::operation_aborted /* timeout canceled */) {
+        // do nothing if this timeout operation has been canceled
+        if (error == ba::error::operation_aborted) {
           return;
-        } else if (error) {
+        }
+        // cancel simultaneous operation to launch no more events
+        fsm.ctx->serial.cancel();
+        // launch an event
+        if (error) {
           ROS_ERROR_STREAM(error.message());
           fsm.parent->process_event(Error());
         } else {
@@ -132,9 +146,13 @@ struct MachineDef : bmf::state_machine_def< MachineDef > {
       }
 
       template < class FSM > void handle_write(const bs::error_code &error, FSM &fsm) const {
-        if (error == ba::error::operation_aborted /* writing operation canceled */) {
+        if (error == ba::error::operation_aborted) {
           return;
-        } else if (error) {
+        }
+
+        fsm.ctx->timer.cancel();
+
+        if (error) {
           ROS_ERROR_STREAM(error.message());
           fsm.parent->process_event(Error());
         } else {
@@ -142,16 +160,11 @@ struct MachineDef : bmf::state_machine_def< MachineDef > {
         }
       }
 
-      template < class Event, class FSM > void on_exit(const Event &, FSM &fsm) const {
-        fsm.ctx->serial.cancel();
-        fsm.ctx->timer.cancel();
-      }
-
     private:
       uint8_t cmd_[9];
     };
 
-    struct ReadingAndPublishingData : bmf::state<> {
+    struct ReceivingData : bmf::state<> {
       template < class Event, class FSM > void on_entry(const Event &, FSM &fsm) {
         if (!pub_) {
           pub_ = fsm.ctx->nh.template advertise< omron_env_sensor_msgs::DataShort >("data", true);
@@ -160,18 +173,21 @@ struct MachineDef : bmf::state_machine_def< MachineDef > {
         // set timeout
         fsm.ctx->timer.expires_from_now(bp::seconds(1));
         fsm.ctx->timer.async_wait(
-            boost::bind(&ReadingAndPublishingData::handle_wait< FSM >, this, _1, boost::ref(fsm)));
+            boost::bind(&ReceivingData::handle_wait< FSM >, this, _1, boost::ref(fsm)));
 
         // start reading
-        ba::async_read(
-            fsm.ctx->serial, ba::buffer(res_),
-            boost::bind(&ReadingAndPublishingData::handle_read< FSM >, this, _1, boost::ref(fsm)));
+        ba::async_read(fsm.ctx->serial, ba::buffer(res_),
+                       boost::bind(&ReceivingData::handle_read< FSM >, this, _1, boost::ref(fsm)));
       }
 
       template < class FSM > void handle_wait(const bs::error_code &error, FSM &fsm) const {
-        if (error == ba::error::operation_aborted /* timeout canceled */) {
+        if (error == ba::error::operation_aborted) {
           return;
-        } else if (error) {
+        }
+
+        fsm.ctx->serial.cancel();
+
+        if (error) {
           ROS_ERROR_STREAM(error.message());
           fsm.parent->process_event(Error());
         } else {
@@ -181,9 +197,13 @@ struct MachineDef : bmf::state_machine_def< MachineDef > {
       }
 
       template < class FSM > void handle_read(const bs::error_code &error, FSM &fsm) {
-        if (error == ba::error::operation_aborted /* reading operation canceled */) {
+        if (error == ba::error::operation_aborted) {
           return;
-        } else if (error) {
+        }
+
+        fsm.ctx->timer.cancel();
+
+        if (error) {
           ROS_ERROR_STREAM(error.message());
           fsm.parent->process_event(Error());
         } else {
@@ -203,14 +223,8 @@ struct MachineDef : bmf::state_machine_def< MachineDef > {
             msg->heat_stroke = ((0x00ff & res_[26]) + ((0x00ff & res_[27]) << 8)) / 100.;
             pub_.publish(msg);
           }
-
           fsm.parent->process_event(Success());
         }
-      }
-
-      template < class Event, class FSM > void on_exit(const Event &, FSM &fsm) const {
-        fsm.ctx->serial.cancel();
-        fsm.ctx->timer.cancel();
       }
 
     private:
@@ -231,9 +245,11 @@ struct MachineDef : bmf::state_machine_def< MachineDef > {
       }
 
       template < class FSM > void handle_wait(const bs::error_code &error, FSM &fsm) const {
-        if (error == ba::error::operation_aborted /* sleeping operation canceled */) {
+        if (error == ba::error::operation_aborted) {
           return;
-        } else if (error) {
+        }
+
+        if (error) {
           ROS_ERROR_STREAM(error.message());
           fsm.parent->process_event(Error());
         } else {
@@ -241,33 +257,25 @@ struct MachineDef : bmf::state_machine_def< MachineDef > {
         }
       }
 
-      template < class Event, class FSM > void on_exit(const Event &, FSM &fsm) const {
-        fsm.ctx->timer.cancel();
-      }
-
     private:
       int interval_;
     };
 
-    struct Ok : bmf::state<> {};
-
-    struct Exit : bmf::exit_pseudo_state< Error > {};
-
     // transitions
 
-    typedef boost::mpl::vector< Opening, Ok > initial_state;
+    typedef boost::mpl::vector< Ok, Opening > initial_state;
 
     // clang-format off
     typedef boost::mpl::vector<
-        //        Start                      Event     Next                       Action      Guard
-        //      +--------------------------+---------+--------------------------+-----------+-----------+
-        bmf::Row< Opening                  , Success , RequestingData           , bmf::none , bmf::none >,
-        bmf::Row< RequestingData           , Success , ReadingAndPublishingData , bmf::none , bmf::none >,
-        bmf::Row< ReadingAndPublishingData , Success , Sleeping                 , bmf::none , bmf::none >,
-        bmf::Row< Sleeping                 , Success , RequestingData           , bmf::none , bmf::none >,
-        //      +--------------------------+---------+--------------------------+-----------+-----------+
-        bmf::Row< Ok                       , Error   , Exit                     , bmf::none , bmf::none > >
-        //      +--------------------------+---------+--------------------------+-----------+-----------+
+        //        Start            Event     Next             Action      Guard
+        //      +----------------+---------+----------------+-----------+-----------+
+        bmf::Row< Ok             , Error   , Exit           , bmf::none , bmf::none >,
+        //      +----------------+---------+----------------+-----------+-----------+
+        bmf::Row< Opening        , Success , RequestingData , bmf::none , bmf::none >,
+        bmf::Row< RequestingData , Success , ReceivingData  , bmf::none , bmf::none >,
+        bmf::Row< ReceivingData  , Success , Sleeping       , bmf::none , bmf::none >,
+        bmf::Row< Sleeping       , Success , RequestingData , bmf::none , bmf::none > >
+        //      +----------------+---------+----------------+-----------+-----------+
         transition_table;
     // clang-format on
 
@@ -278,8 +286,7 @@ struct MachineDef : bmf::state_machine_def< MachineDef > {
       ctx = parent->ctx;
     }
 
-    // reference to context
-
+  private:
     bmb::state_machine< MachineDef > *parent;
     Context *ctx;
   };
@@ -296,16 +303,14 @@ struct MachineDef : bmf::state_machine_def< MachineDef > {
     template < class FSM > void handle_wait(const bs::error_code &error, FSM &fsm) const {
       if (error == ba::error::operation_aborted) {
         return;
-      } else if (error) {
+      }
+
+      if (error) {
         ROS_ERROR_STREAM(error.message());
         fsm.process_event(Error());
       } else {
         fsm.process_event(Success());
       }
-    }
-
-    template < class Event, class FSM > void on_exit(const Event &, FSM &fsm) const {
-      fsm.ctx->timer.cancel();
     }
   };
 
@@ -345,6 +350,7 @@ struct MachineDef : bmf::state_machine_def< MachineDef > {
 
   MachineDef(Context *_ctx) : ctx(_ctx) {}
 
+private:
   Context *ctx;
 };
 typedef bmb::state_machine< MachineDef > Machine;
@@ -354,7 +360,6 @@ typedef bmb::state_machine< MachineDef > Machine;
 //
 
 int main(int argc, char *argv[]) {
-  // TODO: handle SIGINT to stop io_service
   ros::init(argc, argv, "omron_env_sensor_node");
 
   ba::io_service ios;
@@ -365,7 +370,9 @@ int main(int argc, char *argv[]) {
 
   m.start();
 
-  ios.run();
+  while (ros::ok()) {
+    ios.run_one();
+  }
 
   return 0;
 }
