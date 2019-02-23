@@ -1,4 +1,3 @@
-#include <iostream>
 #include <string>
 
 #include <omron_env_sensor_msgs/DataShort.h>
@@ -10,6 +9,8 @@
 
 #include <boost/asio/buffer.hpp>
 #include <boost/asio/deadline_timer.hpp>
+#include <boost/asio/error.hpp>
+#include <boost/asio/io_service.hpp>
 #include <boost/asio/read.hpp>
 #include <boost/asio/serial_port.hpp>
 #include <boost/asio/write.hpp>
@@ -18,6 +19,7 @@
 #include <boost/msm/back/state_machine.hpp>
 #include <boost/msm/front/functor_row.hpp>
 #include <boost/msm/front/state_machine_def.hpp>
+#include <boost/msm/front/states.hpp>
 #include <boost/ref.hpp>
 #include <boost/system/error_code.hpp>
 
