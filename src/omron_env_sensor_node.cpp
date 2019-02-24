@@ -218,7 +218,7 @@ struct MachineDef : bmf::state_machine_def< MachineDef > {
             msg->barometric_pressure = ((0x00ff & res_[14]) + ((0x00ff & res_[15]) << 8) +
                                         ((0x00ff & res_[16]) << 16) + ((0x00ff & res_[17]) << 24)) /
                                        1000.;
-            msg->sound_noise = ((0x00ff & res_[12]) + ((0x00ff & res_[13]) << 8)) / 100.;
+            msg->sound_noise = ((0x00ff & res_[18]) + ((0x00ff & res_[19]) << 8)) / 100.;
             msg->etvoc = (0x00ff & res_[20]) + ((0x00ff & res_[21]) << 8);
             msg->eco2 = (0x00ff & res_[22]) + ((0x00ff & res_[23]) << 8);
             msg->discomfort_index = ((0x00ff & res_[24]) + ((0x00ff & res_[25]) << 8)) / 100.;
