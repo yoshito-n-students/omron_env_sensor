@@ -7,13 +7,13 @@ OMRON 2JCIE-BU01 https://www.components.omron.com/product-detail?partNumber=2JCI
 omron_env_sensor_msgs https://github.com/yoshito-n-students/omron_env_sensor_msgs
 
 ## Setup
-1. install udev rule to mount the sensor as `/dev/ttyUSB*`\
+1. install an udev rule to mount the sensor as `/dev/ttyUSB*`\
 `sudo cp /path/to/repo/99-omron-2jcie-bu01.rules /etc/udev/rules.d/`
 
 1. add the current user to the dialout group to permit to access `/dev/ttyUSB*`\
 `sudo usermod -aG dialout $USER`
 
-Above command were tested only on Ubuntu 16.04 and may vary for other environments.
+Above commands were tested only on Ubuntu 16.04 and may vary for other environments.
 
 ## Published Topics
 **data** (omron_env_sensor_msgs/DataShort)
