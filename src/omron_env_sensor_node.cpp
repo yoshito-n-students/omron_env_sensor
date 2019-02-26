@@ -337,12 +337,12 @@ struct MachineDef : bmf::state_machine_def< MachineDef > {
 
   // clang-format off
   typedef boost::mpl::vector<
-      //        Start      Event     Next            Action      Guard
-      //      +----------+---------+---------------+-----------+-----------+
-      bmf::Row< WorkMode , Error   , IdleMode      , bmf::none , bmf::none >,
-      bmf::Row< IdleMode , Success , WorkMode      , bmf::none , bmf::none >,
-      bmf::Row< IdleMode , Error   , TerminateMode , bmf::none , bmf::none > >
-      //      +----------+---------+---------------+-----------+-----------+
+      //        Start          Event     Next            Action      Guard
+      //      +--------------+---------+---------------+-----------+-----------+
+      bmf::Row< WorkModeExit , Error   , IdleMode      , bmf::none , bmf::none >,
+      bmf::Row< IdleMode     , Success , WorkMode      , bmf::none , bmf::none >,
+      bmf::Row< IdleMode     , Error   , TerminateMode , bmf::none , bmf::none > >
+      //      +--------------+---------+---------------+-----------+-----------+
       transition_table;
   // clang-format on
 
