@@ -107,18 +107,15 @@ struct MachineDef : bmf::state_machine_def< MachineDef > {
       RequestingData() {
         typedef boost::crc_optimal< 16, 0x8005, 0xFFFF, 0, true, true > CRC;
 
-        cmd_[0] = 0x52;                   // header 1
-        cmd_[1] = 0x42;                   // header 2
-        cmd_[2] = 5 & 0x00ff;             // length L
-        cmd_[3] = (5 & 0xff00) >> 8;      // length H
-        cmd_[4] = 0x01;                   // command (0x01: read)
-        cmd_[5] = 0x5022 & 0x00ff;        // address L (0x5022: latest data short)
-        cmd_[6] = (0x5022 & 0xff00) >> 8; // address H
+        cmd_[0] = 0x52;                       // header 1
+        cmd_[1] = 0x42;                       // header 2
+        encode< uint16_t >(5, &cmd_[2]);      // length (2 bytes)
+        cmd_[4] = 0x01;                       // command (0x01: read)
+        encode< uint16_t >(0x5022, &cmd_[5]); // address (2 bytes, 0x5022: latest data short)
 
         CRC crc;
         crc.process_bytes(cmd_, 7);
-        cmd_[7] = crc.checksum() & 0x00ff;        // CRC L
-        cmd_[8] = (crc.checksum() & 0xff00) >> 8; // CRC H
+        encode< uint16_t >(crc.checksum(), &cmd_[7]); // CRC (2 bytes)
       }
 
       template < class Event, class FSM > void on_entry(const Event &, FSM &fsm) const {
@@ -163,6 +160,11 @@ struct MachineDef : bmf::state_machine_def< MachineDef > {
         } else {
           fsm.parent->process_event(Success());
         }
+      }
+
+    private:
+      template < typename T > static void encode(const T &src, uint8_t *const dst) {
+        *reinterpret_cast< T * >(dst) = src;
       }
 
     private:
@@ -215,21 +217,24 @@ struct MachineDef : bmf::state_machine_def< MachineDef > {
           if (pub_.getNumSubscribers() > 0) {
             omron_env_sensor_msgs::DataShortPtr msg(new omron_env_sensor_msgs::DataShort());
             msg->header.stamp = ros::Time::now();
-            msg->temperature = ((0x00ff & res_[8]) + ((0x00ff & res_[9]) << 8)) / 100.;
-            msg->relative_humidity = ((0x00ff & res_[10]) + ((0x00ff & res_[11]) << 8)) / 100.;
-            msg->ambient_light = (0x00ff & res_[12]) + ((0x00ff & res_[13]) << 8);
-            msg->barometric_pressure = ((0x00ff & res_[14]) + ((0x00ff & res_[15]) << 8) +
-                                        ((0x00ff & res_[16]) << 16) + ((0x00ff & res_[17]) << 24)) /
-                                       1000.;
-            msg->sound_noise = ((0x00ff & res_[18]) + ((0x00ff & res_[19]) << 8)) / 100.;
-            msg->etvoc = (0x00ff & res_[20]) + ((0x00ff & res_[21]) << 8);
-            msg->eco2 = (0x00ff & res_[22]) + ((0x00ff & res_[23]) << 8);
-            msg->discomfort_index = ((0x00ff & res_[24]) + ((0x00ff & res_[25]) << 8)) / 100.;
-            msg->heat_stroke = ((0x00ff & res_[26]) + ((0x00ff & res_[27]) << 8)) / 100.;
+            msg->temperature = decode< uint16_t >(&res_[8]) / 100.;
+            msg->relative_humidity = decode< uint16_t >(&res_[10]) / 100.;
+            msg->ambient_light = decode< uint16_t >(&res_[12]);
+            msg->barometric_pressure = decode< uint32_t >(&res_[14]) / 1000.;
+            msg->sound_noise = decode< uint16_t >(&res_[18]) / 100.;
+            msg->etvoc = decode< uint16_t >(&res_[20]);
+            msg->eco2 = decode< uint16_t >(&res_[22]);
+            msg->discomfort_index = decode< uint16_t >(&res_[24]) / 100.;
+            msg->heat_stroke = decode< uint16_t >(&res_[26]) / 100.;
             pub_.publish(msg);
           }
           fsm.parent->process_event(Success());
         }
+      }
+
+    private:
+      template < typename T > static T decode(const uint8_t *const src) {
+        return *reinterpret_cast< const T * >(src);
       }
 
     private:
