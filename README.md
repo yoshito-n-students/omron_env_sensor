@@ -21,5 +21,5 @@ Above commands were tested only on Ubuntu 16.04 and may vary for other environme
 ## Parameters
 **~device** (string, default: "/dev/ttyUSB0")
 
-**~interval** (int, default: 1000)
-* interval between fetching data from the sensor in ms
+**~cycle** (int, default: 1000)
+* cycle time between fetching data from the sensor in ms

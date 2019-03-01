@@ -2,6 +2,7 @@
 
   <node name="sensor" pkg="omron_env_sensor" type="omron_env_sensor_node" output="screen">
     <param name="device" value="/dev/ttyUSB0"/>
+    <param name="cycle" value="1000"/>
   </node>
 
   <node name="echo" pkg="rostopic" type="rostopic" args="echo data" output="screen"/>

@@ -7,6 +7,7 @@
 #include <ros/publisher.h>
 #include <ros/time.h>
 
+#include <boost/algorithm/clamp.hpp>
 #include <boost/asio/buffer.hpp>
 #include <boost/asio/deadline_timer.hpp>
 #include <boost/asio/error.hpp>
@@ -16,6 +17,8 @@
 #include <boost/asio/write.hpp>
 #include <boost/bind.hpp>
 #include <boost/crc.hpp>
+#include <boost/date_time/posix_time/posix_time_duration.hpp>
+#include <boost/date_time/posix_time/ptime.hpp>
 #include <boost/msm/back/state_machine.hpp>
 #include <boost/msm/front/functor_row.hpp>
 #include <boost/msm/front/state_machine_def.hpp>
@@ -235,15 +238,24 @@ struct MachineDef : bmf::state_machine_def< MachineDef > {
     };
 
     struct Sleeping : bmf::state<> {
-      Sleeping() : interval_(-1) {}
+      Sleeping() : start_(bp::min_date_time), cycle_(bp::neg_infin) {}
 
       template < class Event, class FSM > void on_entry(const Event &, FSM &fsm) {
-        if (interval_ < 0) {
-          interval_ = fsm.ctx->pnh.param("interval", 1000);
+        if (cycle_.is_negative()) {
+          cycle_ = bp::milliseconds(fsm.ctx->pnh.param("cycle", 1000));
         }
-        fsm.ctx->timer.expires_from_now(bp::milliseconds(interval_));
+
+        // set the end time of sleeping. sleep duration must be in [0, cycle_].
+        const bp::ptime now(bp::microsec_clock::universal_time());
+        const bp::ptime end(boost::algorithm::clamp(start_ + cycle_, now, now + cycle_));
+
+        // set the sleep timer
+        fsm.ctx->timer.expires_at(end);
         fsm.ctx->timer.async_wait(
             boost::bind(&Sleeping::handle_wait< FSM >, this, _1, boost::ref(fsm)));
+
+        // remember this end time as the next start time
+        start_ = end;
       }
 
       template < class FSM > void handle_wait(const bs::error_code &error, FSM &fsm) const {
@@ -260,7 +272,8 @@ struct MachineDef : bmf::state_machine_def< MachineDef > {
       }
 
     private:
-      int interval_;
+      bp::ptime start_;
+      bp::time_duration cycle_;
     };
 
     // transitions
