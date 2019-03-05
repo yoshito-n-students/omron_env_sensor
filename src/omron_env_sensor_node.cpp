@@ -68,6 +68,8 @@ struct MachineDef : bmf::state_machine_def< MachineDef > {
 
   struct WorkModeDef : bmf::state_machine_def< WorkModeDef > {
 
+    typedef boost::crc_optimal< 16, 0x8005, 0xFFFF, 0, true, true > CRC;
+
     // sub-states
 
     struct Ok : bmf::state<> {};
@@ -105,8 +107,6 @@ struct MachineDef : bmf::state_machine_def< MachineDef > {
 
     struct RequestingData : bmf::state<> {
       RequestingData() {
-        typedef boost::crc_optimal< 16, 0x8005, 0xFFFF, 0, true, true > CRC;
-
         cmd_[0] = 0x52;                       // header 1
         cmd_[1] = 0x42;                       // header 2
         encode< uint16_t >(5, &cmd_[2]);      // length (2 bytes)
@@ -213,28 +213,53 @@ struct MachineDef : bmf::state_machine_def< MachineDef > {
         if (error) {
           ROS_ERROR_STREAM(error.message());
           fsm.parent->process_event(Error());
-        } else {
-          if (pub_.getNumSubscribers() > 0) {
-            omron_env_sensor_msgs::DataShortPtr msg(new omron_env_sensor_msgs::DataShort());
-            msg->header.stamp = ros::Time::now();
-            msg->temperature = decode< uint16_t >(&res_[8]) / 100.;
-            msg->relative_humidity = decode< uint16_t >(&res_[10]) / 100.;
-            msg->ambient_light = decode< uint16_t >(&res_[12]);
-            msg->barometric_pressure = decode< uint32_t >(&res_[14]) / 1000.;
-            msg->sound_noise = decode< uint16_t >(&res_[18]) / 100.;
-            msg->etvoc = decode< uint16_t >(&res_[20]);
-            msg->eco2 = decode< uint16_t >(&res_[22]);
-            msg->discomfort_index = decode< uint16_t >(&res_[24]) / 100.;
-            msg->heat_stroke = decode< uint16_t >(&res_[26]) / 100.;
-            pub_.publish(msg);
-          }
-          fsm.parent->process_event(Success());
+          return;
         }
+
+        // check recieved data format
+        if (res_[0] != 0x52 || res_[1] != 0x42) {
+          ROS_ERROR("Invalid header");
+          fsm.parent->process_event(Error());
+          return;
+        }
+        if (decode< uint16_t >(&res_[2]) != 26) {
+          ROS_ERROR("Invalid length");
+          fsm.parent->process_event(Error());
+          return;
+        }
+        if (!checkCRC()) {
+          ROS_ERROR("CRC error");
+          fsm.parent->process_event(Error());
+          return;
+        }
+
+        // publish data if subscriber exists
+        if (pub_.getNumSubscribers() > 0) {
+          omron_env_sensor_msgs::DataShortPtr msg(new omron_env_sensor_msgs::DataShort());
+          msg->header.stamp = ros::Time::now();
+          msg->temperature = decode< uint16_t >(&res_[8]) / 100.;
+          msg->relative_humidity = decode< uint16_t >(&res_[10]) / 100.;
+          msg->ambient_light = decode< uint16_t >(&res_[12]);
+          msg->barometric_pressure = decode< uint32_t >(&res_[14]) / 1000.;
+          msg->sound_noise = decode< uint16_t >(&res_[18]) / 100.;
+          msg->etvoc = decode< uint16_t >(&res_[20]);
+          msg->eco2 = decode< uint16_t >(&res_[22]);
+          msg->discomfort_index = decode< uint16_t >(&res_[24]) / 100.;
+          msg->heat_stroke = decode< uint16_t >(&res_[26]) / 100.;
+          pub_.publish(msg);
+        }
+        fsm.parent->process_event(Success());
       }
 
     private:
       template < typename T > static T decode(const uint8_t *const src) {
         return *reinterpret_cast< const T * >(src);
+      }
+
+      bool checkCRC() {
+        CRC crc;
+        crc.process_bytes(res_, 28);
+        return crc.checksum() == decode< uint16_t >(&res_[28]);
       }
 
     private:
