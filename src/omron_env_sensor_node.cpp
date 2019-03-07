@@ -19,6 +19,7 @@
 #include <boost/crc.hpp>
 #include <boost/date_time/posix_time/posix_time_duration.hpp>
 #include <boost/date_time/posix_time/ptime.hpp>
+#include <boost/endian/conversion.hpp>
 #include <boost/msm/back/state_machine.hpp>
 #include <boost/msm/front/functor_row.hpp>
 #include <boost/msm/front/state_machine_def.hpp>
@@ -27,6 +28,7 @@
 #include <boost/system/error_code.hpp>
 
 namespace ba = boost::asio;
+namespace be = boost::endian;
 namespace bm = boost::msm;
 namespace bmf = bm::front;
 namespace bmb = bm::back;
@@ -164,7 +166,7 @@ struct MachineDef : bmf::state_machine_def< MachineDef > {
 
     private:
       template < typename T > static void encode(const T &src, uint8_t *const dst) {
-        *reinterpret_cast< T * >(dst) = src;
+        *reinterpret_cast< T * >(dst) = be::native_to_little(src);
       }
 
     private:
@@ -253,7 +255,7 @@ struct MachineDef : bmf::state_machine_def< MachineDef > {
 
     private:
       template < typename T > static T decode(const uint8_t *const src) {
-        return *reinterpret_cast< const T * >(src);
+        return be::little_to_native(*reinterpret_cast< const T * >(src));
       }
 
       bool checkCRC() {
