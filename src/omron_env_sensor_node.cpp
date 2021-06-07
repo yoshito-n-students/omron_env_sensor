@@ -41,20 +41,22 @@ namespace bmb = bm::back;
 namespace bp = boost::posix_time;
 namespace bs = boost::system;
 
+#if BOOST_VERSION >= 107000
+namespace boost {
+namespace asio {
+using io_service = io_context;
+}
+} // namespace boost
+#endif
+
 //
 // context manipulated by the state machine
 //
 
 struct Context {
-#if BOOST_VERSION >= 107000
-  Context(const std::string &_port, ba::io_context &ioc, const ros::NodeHandle &_nh,
-          const ros::NodeHandle &_pnh)
-      : port(_port), serial(ioc), timer(ioc), nh(_nh), pnh(_pnh) {}
-#else
   Context(const std::string &_port, ba::io_service &ios, const ros::NodeHandle &_nh,
           const ros::NodeHandle &_pnh)
       : port(_port), serial(ios), timer(ios), nh(_nh), pnh(_pnh) {}
-#endif
 
   std::string port;
   ba::serial_port serial;
@@ -431,24 +433,15 @@ int main(int argc, char *argv[]) {
   ros::init(argc, argv, "omron_env_sensor_node");
   ros::NodeHandle nh, pnh("~");
 
-#if BOOST_VERSION >= 107000
-  ba::io_context ioc;
-  Context ctx(pnh.param< std::string >("device", "/dev/ttyUSB0"), ioc, nh, pnh);
-#else
   ba::io_service ios;
   Context ctx(pnh.param< std::string >("device", "/dev/ttyUSB0"), ios, nh, pnh);
-#endif
 
   Machine m(&ctx);
 
   m.start();
 
   while (ros::ok()) {
-#if BOOST_VERSION >= 107000
-    ioc.run_one();
-#else
     ios.run_one();
-#endif
   }
 
   return 0;
