@@ -11,7 +11,6 @@
 #include <boost/asio/buffer.hpp>
 #include <boost/asio/deadline_timer.hpp>
 #include <boost/asio/error.hpp>
-#include <boost/asio/io_service.hpp>
 #include <boost/asio/read.hpp>
 #include <boost/asio/serial_port.hpp>
 #include <boost/asio/write.hpp>
@@ -27,6 +26,13 @@
 #include <boost/ref.hpp>
 #include <boost/system/error_code.hpp>
 
+#if BOOST_VERSION >= 107000
+#include <boost/asio/io_context.hpp>
+#include <boost/asio/post.hpp>
+#else
+#include <boost/asio/io_service.hpp>
+#endif
+
 namespace ba = boost::asio;
 namespace be = boost::endian;
 namespace bm = boost::msm;
@@ -40,9 +46,15 @@ namespace bs = boost::system;
 //
 
 struct Context {
+#if BOOST_VERSION >= 107000
+  Context(const std::string &_port, ba::io_context &ioc, const ros::NodeHandle &_nh,
+          const ros::NodeHandle &_pnh)
+      : port(_port), serial(ioc), timer(ioc), nh(_nh), pnh(_pnh) {}
+#else
   Context(const std::string &_port, ba::io_service &ios, const ros::NodeHandle &_nh,
           const ros::NodeHandle &_pnh)
       : port(_port), serial(ios), timer(ios), nh(_nh), pnh(_pnh) {}
+#endif
 
   std::string port;
   ba::serial_port serial;
@@ -97,12 +109,24 @@ struct MachineDef : bmf::state_machine_def< MachineDef > {
           // schedule an event processing after this entry action.
           // this is because the event processing has to be executed
           // after completing the transition to the Opening state
+#if BOOST_VERSION >= 107000
+          ba::post(fsm.ctx->serial.get_executor(),
+                   boost::bind(&bmb::state_machine< MachineDef >::process_event< Success >,
+                               fsm.parent, Success()));
+#else
           fsm.ctx->serial.get_io_service().post(boost::bind(
               &bmb::state_machine< MachineDef >::process_event< Success >, fsm.parent, Success()));
+#endif
         } catch (const bs::system_error &error) {
           ROS_ERROR_STREAM(error.what());
+#if BOOST_VERSION >= 107000
+          ba::post(fsm.ctx->serial.get_executor(),
+                   boost::bind(&bmb::state_machine< MachineDef >::process_event< Error >,
+                               fsm.parent, Error()));
+#else
           fsm.ctx->serial.get_io_service().post(boost::bind(
               &bmb::state_machine< MachineDef >::process_event< Error >, fsm.parent, Error()));
+#endif
         }
       }
     };
@@ -405,17 +429,26 @@ typedef bmb::state_machine< MachineDef > Machine;
 
 int main(int argc, char *argv[]) {
   ros::init(argc, argv, "omron_env_sensor_node");
-
-  ba::io_service ios;
   ros::NodeHandle nh, pnh("~");
+
+#if BOOST_VERSION >= 107000
+  ba::io_context ioc;
+  Context ctx(pnh.param< std::string >("device", "/dev/ttyUSB0"), ioc, nh, pnh);
+#else
+  ba::io_service ios;
   Context ctx(pnh.param< std::string >("device", "/dev/ttyUSB0"), ios, nh, pnh);
+#endif
 
   Machine m(&ctx);
 
   m.start();
 
   while (ros::ok()) {
+#if BOOST_VERSION >= 107000
+    ioc.run_one();
+#else
     ios.run_one();
+#endif
   }
 
   return 0;
