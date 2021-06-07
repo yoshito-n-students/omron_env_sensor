@@ -22,11 +22,17 @@ jobs:
         run: |
           sudo apt update
           sudo apt --yes upgrade
-      # Checkout
+      # Checkout core pkg
       - name: Checkout
         uses: actions/checkout@v2
         with:
           path: src/omron_env_sensor
+      # Checkout msgs pkg
+      - name: Checkout msgs pkg
+        uses: actions/checkout@v2
+        with:
+          repository: yoshito-n-students/omron_env_sensor_msgs
+          path: src/omron_env_sensor_msgs
       # Install dependencies
       - name: Install dependencies
         run: |
