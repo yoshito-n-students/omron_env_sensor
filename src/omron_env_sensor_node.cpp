@@ -84,7 +84,7 @@ struct MachineDef : bmf::state_machine_def< MachineDef > {
 
   struct WorkModeDef : bmf::state_machine_def< WorkModeDef > {
 
-    typedef boost::crc_optimal< 16, 0x8005, 0xFFFF, 0, true, true > CRC;
+    using CRC = boost::crc_optimal< 16, 0x8005, 0xFFFF, 0, true, true >;
 
     // sub-states
 
@@ -95,7 +95,7 @@ struct MachineDef : bmf::state_machine_def< MachineDef > {
     struct Opening : bmf::state<> {
       template < class Event, class FSM > void on_entry(const Event &, FSM &fsm) const {
         try {
-          typedef ba::serial_port Serial;
+          using Serial = ba::serial_port;
 
           if (fsm.ctx->serial.is_open()) {
             fsm.ctx->serial.close();
@@ -263,7 +263,7 @@ struct MachineDef : bmf::state_machine_def< MachineDef > {
 
         // publish data if subscriber exists
         if (pub_.getNumSubscribers() > 0) {
-          omron_env_sensor_msgs::DataShortPtr msg(new omron_env_sensor_msgs::DataShort());
+          const omron_env_sensor_msgs::DataShortPtr msg(new omron_env_sensor_msgs::DataShort());
           msg->header.stamp = ros::Time::now();
           msg->temperature = decode< uint16_t >(&res_[8]) / 100.;
           msg->relative_humidity = decode< uint16_t >(&res_[10]) / 100.;
@@ -333,10 +333,10 @@ struct MachineDef : bmf::state_machine_def< MachineDef > {
 
     // transitions
 
-    typedef boost::mpl::vector< Ok, Opening > initial_state;
+    using initial_state = boost::mpl::vector< Ok, Opening >;
 
     // clang-format off
-    typedef boost::mpl::vector<
+    using transition_table = boost::mpl::vector<
         //        Start            Event     Next             Action      Guard
         //      +----------------+---------+----------------+-----------+-----------+
         bmf::Row< Ok             , Error   , Exit           , bmf::none , bmf::none >,
@@ -344,9 +344,8 @@ struct MachineDef : bmf::state_machine_def< MachineDef > {
         bmf::Row< Opening        , Success , RequestingData , bmf::none , bmf::none >,
         bmf::Row< RequestingData , Success , ReceivingData  , bmf::none , bmf::none >,
         bmf::Row< ReceivingData  , Success , Sleeping       , bmf::none , bmf::none >,
-        bmf::Row< Sleeping       , Success , RequestingData , bmf::none , bmf::none > >
+        bmf::Row< Sleeping       , Success , RequestingData , bmf::none , bmf::none > >;
         //      +----------------+---------+----------------+-----------+-----------+
-        transition_table;
     // clang-format on
 
     // entry action of sub-machine
@@ -360,8 +359,8 @@ struct MachineDef : bmf::state_machine_def< MachineDef > {
     bmb::state_machine< MachineDef > *parent;
     Context *ctx;
   };
-  typedef bmb::state_machine< WorkModeDef > WorkMode;
-  typedef WorkMode::exit_pt< WorkModeDef::Exit > WorkModeExit;
+  using WorkMode = bmb::state_machine< WorkModeDef >;
+  using WorkModeExit = WorkMode::exit_pt< WorkModeDef::Exit >;
 
   struct IdleMode : bmf::state<> {
     template < class Event, class FSM > void on_entry(const Event &, FSM &fsm) const {
@@ -401,17 +400,16 @@ struct MachineDef : bmf::state_machine_def< MachineDef > {
   // transitions
   //
 
-  typedef WorkMode initial_state;
+  using initial_state = WorkMode;
 
   // clang-format off
-  typedef boost::mpl::vector<
+  using transition_table = boost::mpl::vector<
       //        Start          Event     Next            Action      Guard
       //      +--------------+---------+---------------+-----------+-----------+
       bmf::Row< WorkModeExit , Error   , IdleMode      , bmf::none , bmf::none >,
       bmf::Row< IdleMode     , Success , WorkMode      , bmf::none , bmf::none >,
-      bmf::Row< IdleMode     , Error   , TerminateMode , bmf::none , bmf::none > >
+      bmf::Row< IdleMode     , Error   , TerminateMode , bmf::none , bmf::none > >;
       //      +--------------+---------+---------------+-----------+-----------+
-      transition_table;
   // clang-format on
 
   //
@@ -423,7 +421,7 @@ struct MachineDef : bmf::state_machine_def< MachineDef > {
 private:
   Context *ctx;
 };
-typedef bmb::state_machine< MachineDef > Machine;
+using Machine = bmb::state_machine< MachineDef >;
 
 //
 //
